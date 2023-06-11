@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session
@@ -198,10 +199,7 @@ def quote():
         if symbol:
             quote = lookup(symbol)
             # Check if provided symbol was found in endpoint
-            if quote:
-                return render_template("pages/quoted.html", quote=quote, symbol=symbol)
-            else:
-                return apology("Invalid symbol", 400)
+            return render_template("pages/quoted.html", quote=quote, symbol=symbol)
         else:
             return apology("must provide symbol", 400)
 
