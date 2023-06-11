@@ -1,10 +1,12 @@
-import os
+import csv
+import datetime
+import pytz
 import requests
-import urllib.parse
+import subprocess
+import urllib
+import uuid
 
-import re
-
-from flask import redirect, render_template, request, session
+from flask import redirect, render_template, session
 from functools import wraps
 
 
@@ -27,7 +29,7 @@ def login_required(f):
     """
     Decorate routes to require login.
 
-    https://flask.palletsprojects.com/en/1.1.x/patterns/viewdecorators/
+    http://flask.pocoo.org/docs/0.12/patterns/viewdecorators/
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -37,50 +39,40 @@ def login_required(f):
     return decorated_function
 
 
-def usd(value):
-    """Format value as USD."""
-    return f"${value:,.2f}"
-
-
 def lookup(symbol):
     """Look up quote for symbol."""
 
-    # Contact API
+    # Prepare API request
+    symbol = symbol.upper()
+    end = datetime.datetime.now(pytz.timezone("US/Eastern"))
+    start = end - datetime.timedelta(days=7)
+
+    # Yahoo Finance API
+    url = (
+        f"https://query1.finance.yahoo.com/v7/finance/download/{urllib.parse.quote_plus(symbol)}"
+        f"?period1={int(start.timestamp())}"
+        f"&period2={int(end.timestamp())}"
+        f"&interval=1d&events=history&includeAdjustedClose=true"
+    )
+
+    # Query API
     try:
-        api_key = os.environ.get("API_KEY")
-        url = f"https://cloud.iexapis.com/stable/stock/{urllib.parse.quote_plus(symbol)}/quote?token={api_key}"
-        response = requests.get(url)
+        response = requests.get(url, cookies={"session": str(uuid.uuid4())}, headers={"User-Agent": "python-requests", "Accept": "*/*"})
         response.raise_for_status()
-    except requests.RequestException:
-        return None
 
-    # Parse response
-    try:
-        quote = response.json()
+        # CSV header: Date,Open,High,Low,Close,Adj Close,Volume
+        quotes = list(csv.DictReader(response.content.decode("utf-8").splitlines()))
+        quotes.reverse()
+        price = round(float(quotes[0]["Adj Close"]), 2)
         return {
-            "name": quote["companyName"],
-            "price": float(quote["latestPrice"]),
-            "symbol": quote["symbol"]
+            "name": symbol,
+            "price": price,
+            "symbol": symbol
         }
-    except (KeyError, TypeError, ValueError):
+    except (requests.RequestException, ValueError, KeyError, IndexError):
         return None
 
 
-# Custom function to validate password
-def validate_password(password):
-    # Validate password to have 8 or more characters
-    if len(password) < 8:
-        return False
-    # Validate password to have at least one lowercase letter
-    if not re.search("[a-z]", password):
-        return False
-    # Validate password to have at least one uppercase letter
-    if not re.search("[A-Z]", password):
-        return False
-    # Validate password to have at least one number
-    if not re.search("[0-9]", password):
-        return False
-    # Validate password to have at least one symbol
-    if not re.search("[@#$%^&+=]", password):
-        return False
-    return True
+def usd(value):
+    """Format value as USD."""
+    return f"${value:,.2f}"
